@@ -27,22 +27,20 @@ else:
 
 
 def listify(x):
-  if type(x) == list or type(x) == tuple:
-    return x
-  return [x]
+  return x if type(x) in [list, tuple] else [x]
 
 
 def check_call(cmd, **args):
   if type(cmd) != list:
     cmd = cmd.split()
-  print('running: %s' % cmd)
+  print(f'running: {cmd}')
   args['universal_newlines'] = True
   subprocess.check_call(cmd, **args)
 
 
 def checked_call_with_output(cmd, expected=None, unexpected=None, stderr=None):
   cmd = cmd.split(' ')
-  print('running: %s' % cmd)
+  print(f'running: {cmd}')
   try:
     stdout = subprocess.check_output(cmd, stderr=stderr, universal_newlines=True)
   except subprocess.CalledProcessError as e:
@@ -52,10 +50,12 @@ def checked_call_with_output(cmd, expected=None, unexpected=None, stderr=None):
 
   if expected:
     for x in listify(expected):
-      assert x in stdout, 'call had the right output: ' + stdout + '\n[[[' + x + ']]]'
+      assert x in stdout, (
+          f'call had the right output: {stdout}' + '\n[[[' + x + ']]]')
   if unexpected:
     for x in listify(unexpected):
-      assert x not in stdout, 'call had the wrong output: ' + stdout + '\n[[[' + x + ']]]'
+      assert x not in stdout, (
+          f'call had the wrong output: {stdout}' + '\n[[[' + x + ']]]')
 
 
 def failing_call_with_output(cmd, expected):
@@ -96,15 +96,17 @@ def do_lib_building(emcc):
       expected = cache_building_messages
     elif is_expected is False:
       unexpected = cache_building_messages
-    checked_call_with_output(emcc + ' hello_world.c' + args,
-                             expected=expected,
-                             unexpected=unexpected,
-                             stderr=subprocess.STDOUT)
+    checked_call_with_output(
+        f'{emcc} hello_world.c{args}',
+        expected=expected,
+        unexpected=unexpected,
+        stderr=subprocess.STDOUT,
+    )
 
   # The emsdk ships all system libraries so we don't expect to see any
   # cache population unless we explicly --clear-cache.
   do_build('', is_expected=False)
-  check_call(emcc + ' --clear-cache')
+  check_call(f'{emcc} --clear-cache')
   do_build(' -O2', is_expected=True)
   # Do another build at -O0.  In nwers SDK versions this generates
   # different libs, but not in older ones so don't assert here.
@@ -139,12 +141,20 @@ int main() {
 
   def test_already_installed(self):
     # Test we don't re-download unnecessarily
-    checked_call_with_output(emsdk + ' install latest', expected='already installed', unexpected='Downloading:')
+    checked_call_with_output(
+        f'{emsdk} install latest',
+        expected='already installed',
+        unexpected='Downloading:',
+    )
 
   def test_list(self):
     # Test we report installed tools properly. The latest version should be
     # installed, but not some random old one.
-    checked_call_with_output(emsdk + ' list', expected=TAGS['aliases']['latest'] + '    INSTALLED', unexpected='1.39.15    INSTALLED:')
+    checked_call_with_output(
+        f'{emsdk} list',
+        expected=TAGS['aliases']['latest'] + '    INSTALLED',
+        unexpected='1.39.15    INSTALLED:',
+    )
 
   def test_config_contents(self):
     print('test .emscripten contents')
@@ -170,14 +180,15 @@ int main() {
     assert 'fastcomp' in config
 
     print('verify latest fastcomp version is fixed at 1.40.1')
-    checked_call_with_output(fastcomp_emcc + ' -v', '1.40.1', stderr=subprocess.STDOUT)
+    checked_call_with_output(
+        f'{fastcomp_emcc} -v', '1.40.1', stderr=subprocess.STDOUT)
 
   def test_fastcomp_missing(self):
     print('verify that attempting to use newer fastcomp gives an error')
     fastcomp_error = 'the fastcomp backend is not getting new builds or releases. Please use the upstream llvm backend or use an older version than 2.0.0 (such as 1.40.1).'
-    failing_call_with_output(emsdk + ' install latest-fastcomp', fastcomp_error)
-    failing_call_with_output(emsdk + ' install tot-fastcomp', fastcomp_error)
-    failing_call_with_output(emsdk + ' install 2.0.0-fastcomp', fastcomp_error)
+    failing_call_with_output(f'{emsdk} install latest-fastcomp', fastcomp_error)
+    failing_call_with_output(f'{emsdk} install tot-fastcomp', fastcomp_error)
+    failing_call_with_output(f'{emsdk} install 2.0.0-fastcomp', fastcomp_error)
 
   def test_redownload(self):
     print('go back to using upstream')
@@ -185,9 +196,17 @@ int main() {
 
     # Test the normal tools like node don't re-download on re-install
     print('another install must re-download')
-    checked_call_with_output(emsdk + ' uninstall node-14.15.5-64bit')
-    checked_call_with_output(emsdk + ' install node-14.15.5-64bit', expected='Downloading:', unexpected='already installed')
-    checked_call_with_output(emsdk + ' install node-14.15.5-64bit', unexpected='Downloading:', expected='already installed')
+    checked_call_with_output(f'{emsdk} uninstall node-14.15.5-64bit')
+    checked_call_with_output(
+        f'{emsdk} install node-14.15.5-64bit',
+        expected='Downloading:',
+        unexpected='already installed',
+    )
+    checked_call_with_output(
+        f'{emsdk} install node-14.15.5-64bit',
+        unexpected='Downloading:',
+        expected='already installed',
+    )
 
   def test_tot_upstream(self):
     print('test update-tags')
@@ -197,15 +216,15 @@ int main() {
     with open(emconfig) as f:
       config = f.read()
     run_emsdk('activate tot-upstream')
-    with open(emconfig + '.old') as f:
+    with open(f'{emconfig}.old') as f:
       old_config = f.read()
     self.assertEqual(config, old_config)
     # TODO; test on latest as well
-    check_call(upstream_emcc + ' hello_world.c')
+    check_call(f'{upstream_emcc} hello_world.c')
 
   def test_closure(self):
     # Specificlly test with `--closure` so we know that node_modules is working
-    check_call(upstream_emcc + ' hello_world.c --closure=1')
+    check_call(f'{upstream_emcc} hello_world.c --closure=1')
 
   def test_specific_old(self):
     print('test specific release (old, using sdk-* notation)')
@@ -216,7 +235,10 @@ int main() {
     print('test specific release (new, short name)')
     run_emsdk('install 1.38.33')
     print('another install, but no need for re-download')
-    checked_call_with_output(emsdk + ' install 1.38.33', expected='Skipped', unexpected='Downloading:')
+    checked_call_with_output(
+        f'{emsdk} install 1.38.33',
+        expected='Skipped',
+        unexpected='Downloading:')
     run_emsdk('activate 1.38.33')
     with open(emconfig) as f:
       config = f.read()
@@ -238,7 +260,10 @@ int main() {
   def test_no_32bit(self):
     print('test 32-bit error')
     emsdk_hacked = hack_emsdk('not is_os_64bit()', 'True')
-    failing_call_with_output('python %s install latest' % emsdk_hacked, 'this tool is only provided for 64-bit OSes')
+    failing_call_with_output(
+        f'python {emsdk_hacked} install latest',
+        'this tool is only provided for 64-bit OSes',
+    )
     os.remove(emsdk_hacked)
 
   def test_update_no_git(self):
@@ -260,15 +285,26 @@ int main() {
     run_emsdk('install 5c776e6a91c0cb8edafca16a652ee1ee48f4f6d2')
 
     # Check that its not re-downloaded
-    checked_call_with_output(emsdk + ' install 5c776e6a91c0cb8edafca16a652ee1ee48f4f6d2', expected='Skipped', unexpected='Downloading:')
+    checked_call_with_output(
+        f'{emsdk} install 5c776e6a91c0cb8edafca16a652ee1ee48f4f6d2',
+        expected='Skipped',
+        unexpected='Downloading:',
+    )
 
   def test_install_tool(self):
     # Test that its possible to install emscripten as tool instead of SDK
-    checked_call_with_output(emsdk + ' install releases-upstream-77b065ace39e6ab21446e13f92897f956c80476a', unexpected='Installing SDK')
+    checked_call_with_output(
+        f'{emsdk} install releases-upstream-77b065ace39e6ab21446e13f92897f956c80476a',
+        unexpected='Installing SDK',
+    )
 
   def test_activate_missing(self):
     run_emsdk('install latest')
-    failing_call_with_output(emsdk + ' activate 2.0.1', expected="error: tool is not installed and therefore cannot be activated: 'releases-upstream-13e29bd55185e3c12802bc090b4507901856b2ba-64bit'")
+    failing_call_with_output(
+        f'{emsdk} activate 2.0.1',
+        expected=
+        "error: tool is not installed and therefore cannot be activated: 'releases-upstream-13e29bd55185e3c12802bc090b4507901856b2ba-64bit'",
+    )
 
 
 if __name__ == '__main__':

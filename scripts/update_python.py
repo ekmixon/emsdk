@@ -21,6 +21,7 @@ macOS recipe:
   3. Build cpython from source and use `make install` to create archive.
 """
 
+
 import glob
 import multiprocessing
 import os
@@ -33,11 +34,12 @@ from subprocess import check_call
 
 version = '3.9.2'
 major_minor_version = '.'.join(version.split('.')[:2])  # e.g. '3.9.2' -> '3.9'
-base = 'https://www.python.org/ftp/python/%s/' % version
+base = f'https://www.python.org/ftp/python/{version}/'
 revision = '1'
 
 pywin32_version = '227'
-pywin32_base = 'https://github.com/mhammond/pywin32/releases/download/b%s/' % pywin32_version
+pywin32_base = f'https://github.com/mhammond/pywin32/releases/download/b{pywin32_version}/'
+
 
 upload_base = 'gs://webassembly/emscripten-releases-builds/deps/'
 
@@ -45,41 +47,47 @@ upload_base = 'gs://webassembly/emscripten-releases-builds/deps/'
 def unzip_cmd():
     # Use 7-Zip if available (https://www.7-zip.org/)
     sevenzip = os.path.join(os.getenv('ProgramFiles'), '7-Zip', '7z.exe')
-    if os.path.isfile(sevenzip):
-        return [sevenzip, 'x']
-    # Fall back to 'unzip' tool
-    return ['unzip', '-q']
+    return [sevenzip, 'x'] if os.path.isfile(sevenzip) else ['unzip', '-q']
 
 
 def zip_cmd():
     # Use 7-Zip if available (https://www.7-zip.org/)
     sevenzip = os.path.join(os.getenv('ProgramFiles'), '7-Zip', '7z.exe')
-    if os.path.isfile(sevenzip):
-        return [sevenzip, 'a', '-mx9']
-    # Fall back to 'zip' tool
-    return ['zip', '-rq']
+    return [sevenzip, 'a', '-mx9'] if os.path.isfile(sevenzip) else ['zip', '-rq']
 
 
 def make_python_patch(arch):
     if arch == 'amd64':
-      pywin32_filename = 'pywin32-%s.win-%s-py%s.exe' % (pywin32_version, arch, major_minor_version)
+        pywin32_filename = (
+            f'pywin32-{pywin32_version}.win-{arch}-py{major_minor_version}.exe'
+        )
+
     else:
-      pywin32_filename = 'pywin32-%s.%s-py%s.exe' % (pywin32_version, arch, major_minor_version)
-    filename = 'python-%s-embed-%s.zip' % (version, arch)
-    out_filename = 'python-%s-%s-embed-%s+pywin32.zip' % (version, revision, arch)
+        pywin32_filename = (
+            f'pywin32-{pywin32_version}.{arch}-py{major_minor_version}.exe'
+        )
+
+    filename = f'python-{version}-embed-{arch}.zip'
+    out_filename = f'python-{version}-{revision}-embed-{arch}+pywin32.zip'
     if not os.path.exists(pywin32_filename):
         download_url = pywin32_base + pywin32_filename
-        print('Downloading pywin32: ' + download_url)
+        print(f'Downloading pywin32: {download_url}')
         urllib.request.urlretrieve(download_url, pywin32_filename)
 
     if not os.path.exists(filename):
         download_url = base + filename
-        print('Downloading python: ' + download_url)
+        print(f'Downloading python: {download_url}')
         urllib.request.urlretrieve(download_url, filename)
 
     os.mkdir('python-embed')
     check_call(unzip_cmd() + [os.path.abspath(filename)], cwd='python-embed')
-    os.remove(os.path.join('python-embed', 'python%s._pth' % major_minor_version.replace('.', '')))
+    os.remove(
+        os.path.join(
+            'python-embed',
+            f"python{major_minor_version.replace('.', '')}._pth",
+        )
+    )
+
 
     os.mkdir('pywin32')
     rtn = subprocess.call(unzip_cmd() + [os.path.abspath(pywin32_filename)], cwd='pywin32')
@@ -95,7 +103,7 @@ def make_python_patch(arch):
     shutil.rmtree('pywin32')
 
     upload_url = upload_base + out_filename
-    print('Uploading: ' + upload_url)
+    print(f'Uploading: {upload_url}')
     cmd = ['gsutil', 'cp', '-n', out_filename, upload_url]
     print(' '.join(cmd))
     check_call(cmd)
@@ -113,7 +121,7 @@ def build_python():
             prefix = '/opt/homebrew'
             min_macos_version = '11.0'
 
-        osname += '-' + platform.machine()  # Append '-x86_64' or '-arm64' depending on current arch. (TODO: Do this for Linux too, move this below?)
+        osname += f'-{platform.machine()}'
 
         try:
             os.remove(os.path.join(prefix, 'opt', 'openssl', 'lib', 'libssl.dylib'))
@@ -127,13 +135,23 @@ def build_python():
     src_dir = 'cpython'
     if not os.path.exists(src_dir):
       check_call(['git', 'clone', 'https://github.com/python/cpython'])
-    check_call(['git', 'checkout', 'v' + version], cwd=src_dir)
+    check_call(['git', 'checkout', f'v{version}'], cwd=src_dir)
 
-    min_macos_version_line = '-mmacosx-version-min=' + min_macos_version  # Specify the min OS version we want the build to work on
-    build_flags = min_macos_version_line + ' -Werror=partial-availability'  # Build against latest SDK, but issue an error if using any API that would not work on the min OS version
+    min_macos_version_line = f'-mmacosx-version-min={min_macos_version}'
+    build_flags = f'{min_macos_version_line} -Werror=partial-availability'
     env = os.environ.copy()
     env['MACOSX_DEPLOYMENT_TARGET'] = min_macos_version
-    check_call(['./configure', 'CFLAGS=' + build_flags, 'CXXFLAGS=' + build_flags, 'LDFLAGS=' + min_macos_version_line], cwd=src_dir, env=env)
+    check_call(
+        [
+            './configure',
+            f'CFLAGS={build_flags}',
+            f'CXXFLAGS={build_flags}',
+            f'LDFLAGS={min_macos_version_line}',
+        ],
+        cwd=src_dir,
+        env=env,
+    )
+
     check_call(['make', '-j', str(multiprocessing.cpu_count())], cwd=src_dir, env=env)
     check_call(['make', 'install', 'DESTDIR=install'], cwd=src_dir, env=env)
 
@@ -145,18 +163,21 @@ def build_python():
     pip = os.path.join(src_dir, 'install', 'usr', 'local', 'bin', 'pip3')
     check_call([pybin, pip, 'install', 'requests'])
 
-    dirname = 'python-%s-%s' % (version, revision)
+    dirname = f'python-{version}-{revision}'
     if os.path.isdir(dirname):
-        print('Erasing old build directory ' + dirname)
+        print(f'Erasing old build directory {dirname}')
         shutil.rmtree(dirname)
     os.rename(os.path.join(install_dir, 'usr', 'local'), dirname)
-    tarball = 'python-%s-%s-%s.tar.gz' % (version, revision, osname)
-    shutil.rmtree(os.path.join(dirname, 'lib', 'python' + major_minor_version, 'test'))
+    tarball = f'python-{version}-{revision}-{osname}.tar.gz'
+    shutil.rmtree(
+        os.path.join(dirname, 'lib', f'python{major_minor_version}', 'test')
+    )
+
     shutil.rmtree(os.path.join(dirname, 'include'))
     for lib in glob.glob(os.path.join(dirname, 'lib', 'lib*.a')):
       os.remove(lib)
     check_call(['tar', 'zcvf', tarball, dirname])
-    print('Uploading: ' + upload_base + tarball)
+    print(f'Uploading: {upload_base}{tarball}')
     check_call(['gsutil', 'cp', '-n', tarball, upload_base + tarball])
 
 

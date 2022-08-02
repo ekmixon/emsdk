@@ -14,6 +14,7 @@ This wrapper currently serves the following purposes.
    bazel path.
 """
 
+
 from __future__ import print_function
 
 import argparse
@@ -28,7 +29,7 @@ param_file_args = [l.strip() for l in open(param_filename, 'r').readlines()]
 
 # Re-write response file if needed.
 if any(' ' in a for a in param_file_args):
-  new_param_filename = param_filename + '.modified'
+  new_param_filename = f'{param_filename}.modified'
   with open(new_param_filename, 'w') as f:
     for param in param_file_args:
       if ' ' in param:
@@ -36,7 +37,7 @@ if any(' ' in a for a in param_file_args):
       else:
         f.write(param)
       f.write('\n')
-  sys.argv[1] = '@' + new_param_filename
+  sys.argv[1] = f'@{new_param_filename}'
 
 emcc_py = os.path.join(os.environ['EMSCRIPTEN'], 'emcc.py')
 rtn = subprocess.call(['python3', emcc_py] + sys.argv[1:])
@@ -61,23 +62,14 @@ if oformat is not None:
 
   # If the output name has no extension, give it the appropriate extension.
   if not base_name_split[1]:
-    os.rename(output_file, output_file + '.' + oformat)
+    os.rename(output_file, f'{output_file}.{oformat}')
 
-  # If the output name does have an extension and it matches the output format,
-  # change the base_name so it doesn't have an extension.
-  elif base_name_split[1] == '.' + oformat:
+  elif base_name_split[1] == f'.{oformat}':
     base_name = base_name_split[0]
 
-  # If the output name does have an extension and it does not match the output
-  # format, change the base_name so it doesn't have an extension and rename
-  # the output_file so it has the proper extension.
-  # Note that if you do something like name your build rule "foo.js" and pass
-  # "--oformat=html", emscripten will write to the same file for both the js and
-  # html output, overwriting the js output entirely with the html.
-  # Please don't do that.
   else:
     base_name = base_name_split[0]
-    os.rename(output_file, os.path.join(outdir, base_name + '.' + oformat))
+    os.rename(output_file, os.path.join(outdir, f'{base_name}.{oformat}'))
 
 files = []
 extensions = [
@@ -98,8 +90,8 @@ for ext in extensions:
   if os.path.exists(os.path.join(outdir, filename)):
     files.append(filename)
 
-wasm_base = os.path.join(outdir, base_name + '.wasm')
-if os.path.exists(wasm_base + '.debug.wasm') and os.path.exists(wasm_base):
+wasm_base = os.path.join(outdir, f'{base_name}.wasm')
+if os.path.exists(f'{wasm_base}.debug.wasm') and os.path.exists(wasm_base):
   # If we have a .wasm.debug.wasm file and a .wasm file, we need to rewrite the
   # section in the .wasm file that refers to it. The path that's in there
   # is the blaze output path; we want it to be just the filename.
@@ -118,11 +110,11 @@ if os.path.exists(wasm_base + '.debug.wasm') and os.path.exists(wasm_base):
 
     # Next we need to convert length of the filename to LEB128.
     # Start by converting the length of the filename to a bit string.
-    bit_string = '{0:b}'.format(len(base_name + '.wasm.debug.wasm'))
+    bit_string = '{0:b}'.format(len(f'{base_name}.wasm.debug.wasm'))
 
     # Pad the bit string with 0s so that its length is a multiple of 7.
     while len(bit_string) % 7 != 0:
-      bit_string = '0' + bit_string
+      bit_string = f'0{bit_string}'
 
     # Break up our bit string into chunks of 7.
     # We do this backwards because the final format is little-endian.
@@ -132,10 +124,10 @@ if os.path.exists(wasm_base + '.debug.wasm') and os.path.exists(wasm_base):
       if i != 0:
         # Every chunk except the last one needs to be prepended with '1'.
         # The length of each chunk is 7, so that one has an implicit '0'.
-        binary_part = '1' + binary_part
+        binary_part = f'1{binary_part}'
       final_bytes.append(int(binary_part, 2))
     # Finally, add the actual filename.
-    final_bytes.extend((base_name + '.wasm.debug.wasm').encode())
+    final_bytes.extend(f'{base_name}.wasm.debug.wasm'.encode())
 
     # Write our length + filename bytes to a temp file.
     with open('debugsection.tmp', 'wb+') as f:

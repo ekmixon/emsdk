@@ -58,9 +58,11 @@ extra_release_tag = None
 VERBOSE = int(os.getenv('EMSDK_VERBOSE', '0'))
 TTY_OUTPUT = not os.getenv('EMSDK_NOTTY', not sys.stdout.isatty())
 
-WINDOWS = False
-if os.name == 'nt' or (os.getenv('SYSTEMROOT') is not None and 'windows' in os.getenv('SYSTEMROOT').lower()) or (os.getenv('COMSPEC') is not None and 'windows' in os.getenv('COMSPEC').lower()):
-  WINDOWS = True
+WINDOWS = (os.name == 'nt'
+           or (os.getenv('SYSTEMROOT') is not None
+               and 'windows' in os.getenv('SYSTEMROOT').lower())
+           or (os.getenv('COMSPEC') is not None
+               and 'windows' in os.getenv('COMSPEC').lower()))
 
 
 def errlog(msg):
@@ -76,18 +78,12 @@ if os.getenv('MSYSTEM'):
   # and MSYS versions of Python
   if sysconfig.get_platform() == 'mingw':
     MINGW = True
-  if os.getenv('MSYSTEM') != 'MSYS' and os.getenv('MSYSTEM') != 'MINGW64':
+  if os.getenv('MSYSTEM') not in ['MSYS', 'MINGW64']:
     # https://stackoverflow.com/questions/37460073/msys-vs-mingw-internal-environment-variables
     errlog('Warning: MSYSTEM environment variable is present, and is set to "' + os.getenv('MSYSTEM') + '". This shell has not been tested with emsdk and may not work.')
 
-MACOS = False
-if platform.mac_ver()[0] != '':
-  MACOS = True
-
-LINUX = False
-if not MACOS and (platform.system() == 'Linux'):
-  LINUX = True
-
+MACOS = platform.mac_ver()[0] != ''
+LINUX = not MACOS and platform.system() == 'Linux'
 UNIX = (MACOS or LINUX)
 
 
@@ -100,17 +96,12 @@ if WINDOWS and BASH:
   MSYS = True
 
 if not CSH and not POWERSHELL and not BASH and not CMD:
-  # Fall back to default of `cmd` on windows and `bash` otherwise
   if WINDOWS and not MSYS:
     CMD = True
   else:
     BASH = True
 
-if WINDOWS:
-  ENVPATH_SEPARATOR = ';'
-else:
-  ENVPATH_SEPARATOR = ':'
-
+ENVPATH_SEPARATOR = ';' if WINDOWS else ':'
 ARCH = 'unknown'
 # platform.machine() may return AMD64 on windows, so standardize the case.
 machine = platform.machine().lower()
@@ -123,7 +114,7 @@ elif machine.startswith('aarch64') or machine.lower().startswith('arm64'):
 elif platform.machine().startswith('arm'):
   ARCH = 'arm'
 else:
-  errlog("Warning: unknown machine architecture " + machine)
+  errlog(f"Warning: unknown machine architecture {machine}")
   errlog()
 
 # Don't saturate all cores to not steal the whole system, but be aggressive.
@@ -192,15 +183,15 @@ def parse_github_url_and_refspec(url):
     return ('', '')
 
   if url.endswith(('/tree/', '/tree', '/commit/', '/commit')):
-    raise Exception('Malformed git URL and refspec ' + url + '!')
+    raise Exception(f'Malformed git URL and refspec {url}!')
 
   if '/tree/' in url:
     if url.endswith('/'):
-      raise Exception('Malformed git URL and refspec ' + url + '!')
+      raise Exception(f'Malformed git URL and refspec {url}!')
     return url.split('/tree/')
   elif '/commit/' in url:
     if url.endswith('/'):
-      raise Exception('Malformed git URL and refspec ' + url + '!')
+      raise Exception(f'Malformed git URL and refspec {url}!')
     return url.split('/commit/')
   else:
     return (url, 'main')  # Assume the default branch is main in the absence of a refspec
@@ -226,12 +217,12 @@ def which(program):
         return exe_file
 
       if WINDOWS and '.' not in fname:
-        if is_exe(exe_file + '.exe'):
-          return exe_file + '.exe'
-        if is_exe(exe_file + '.cmd'):
-          return exe_file + '.cmd'
-        if is_exe(exe_file + '.bat'):
-          return exe_file + '.bat'
+        if is_exe(f'{exe_file}.exe'):
+          return f'{exe_file}.exe'
+        if is_exe(f'{exe_file}.cmd'):
+          return f'{exe_file}.cmd'
+        if is_exe(f'{exe_file}.bat'):
+          return f'{exe_file}.bat'
 
   return None
 
@@ -240,15 +231,37 @@ def vswhere(version):
   try:
     program_files = os.environ['ProgramFiles(x86)'] if 'ProgramFiles(x86)' in os.environ else os.environ['ProgramFiles']
     vswhere_path = os.path.join(program_files, 'Microsoft Visual Studio', 'Installer', 'vswhere.exe')
-    output = json.loads(subprocess.check_output([vswhere_path, '-latest', '-version', '[%s.0,%s.0)' % (version, version + 1), '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath', '-format', 'json']))
+    output = json.loads(
+        subprocess.check_output([
+            vswhere_path,
+            '-latest',
+            '-version',
+            f'[{version}.0,{version + 1}.0)',
+            '-requires',
+            'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+            '-property',
+            'installationPath',
+            '-format',
+            'json',
+        ]))
     # Visual Studio 2017 Express is not included in the above search, and it
     # does not have the VC.Tools.x86.x64 tool, so do a catch-all attempt as a
     # fallback, to detect Express version.
     if not output:
-      output = json.loads(subprocess.check_output([vswhere_path, '-latest', '-version', '[%s.0,%s.0)' % (version, version + 1), '-products', '*', '-property', 'installationPath', '-format', 'json']))
-      if not output:
-        return ''
-    return str(output[0]['installationPath'])
+      output = json.loads(
+          subprocess.check_output([
+              vswhere_path,
+              '-latest',
+              '-version',
+              f'[{version}.0,{version + 1}.0)',
+              '-products',
+              '*',
+              '-property',
+              'installationPath',
+              '-format',
+              'json',
+          ]))
+    return str(output[0]['installationPath']) if output else ''
   except Exception:
     return ''
 
@@ -308,7 +321,7 @@ def cmake_generator_prefix():
 # Removes a directory tree even if it was readonly, and doesn't throw exception
 # on failure.
 def remove_tree(d):
-  debug_print('remove_tree(' + str(d) + ')')
+  debug_print(f'remove_tree({str(d)})')
   if not os.path.exists(d):
     return
   try:
@@ -320,7 +333,7 @@ def remove_tree(d):
         raise
     shutil.rmtree(d, onerror=remove_readonly_and_try_again)
   except Exception as e:
-    debug_print('remove_tree threw an exception, ignoring: ' + str(e))
+    debug_print(f'remove_tree threw an exception, ignoring: {str(e)}')
 
 
 def win_set_environment_variable_direct(key, value, system=True):
@@ -333,13 +346,13 @@ def win_set_environment_variable_direct(key, value, system=True):
       # Register locally from CURRENT USER section.
       folder = winreg.OpenKeyEx(winreg.HKEY_CURRENT_USER, 'Environment', 0, winreg.KEY_ALL_ACCESS)
     winreg.SetValueEx(folder, key, 0, winreg.REG_EXPAND_SZ, value)
-    debug_print('Set key=' + key + ' with value ' + value + ' in registry.')
+    debug_print(f'Set key={key} with value {value} in registry.')
     return True
   except Exception as e:
     # 'Access is denied.'
     if e.args[3] == 5:
       exit_with_error('failed to set the environment variable \'' + key + '\'! Setting environment variables permanently requires administrator access. Please rerun this command with administrative privileges. This can be done for example by holding down the Ctrl and Shift keys while opening a command prompt in start menu.')
-    errlog('Failed to write environment variable ' + key + ':')
+    errlog(f'Failed to write environment variable {key}:')
     errlog(str(e))
     return False
   finally:
@@ -366,9 +379,7 @@ def win_get_environment_variable(key, system=True, user=True, fallback=True):
       # that expansion items such as %PROGRAMFILES% will have been expanded, so
       # need to be precise not to set these back to system registry, or
       # expansion items would be lost.
-      if fallback:
-        return os.environ[key]
-      return None
+      return os.environ[key] if fallback else None
     finally:
       if folder is not None:
         folder.Close()
@@ -377,14 +388,14 @@ def win_get_environment_variable(key, system=True, user=True, fallback=True):
     # this catch is if both the registry key threw an exception and the key is not in os.environ
     if e.args[0] != 2:
       # 'The system cannot find the file specified.'
-      errlog('Failed to read environment variable ' + key + ':')
+      errlog(f'Failed to read environment variable {key}:')
       errlog(str(e))
     return None
   return value
 
 
 def win_set_environment_variable(key, value, system, user):
-  debug_print('set ' + str(key) + '=' + str(value) + ', in system=' + str(system))
+  debug_print(f'set {str(key)}={str(value)}, in system={str(system)}')
   previous_value = win_get_environment_variable(key, system=system, user=user)
   if previous_value == value:
     debug_print('  no need to set, since same value already exists.')
@@ -409,16 +420,20 @@ def win_set_environment_variable(key, value, system, user):
     # Escape % signs so that we don't expand references to environment variables.
     value = value.replace('%', '^%')
     if len(value) >= 1024:
-      exit_with_error('the new environment variable ' + key + ' is more than 1024 characters long! A value this long cannot be set via command line: please add the environment variable specified above to system environment manually via Control Panel.')
+      exit_with_error(
+          f'the new environment variable {key} is more than 1024 characters long! A value this long cannot be set via command line: please add the environment variable specified above to system environment manually via Control Panel.'
+      )
     cmd = ['SETX', key, value]
     debug_print(str(cmd))
     retcode = subprocess.call(cmd, stdout=subprocess.PIPE)
     if retcode != 0:
-      errlog('ERROR! Failed to set environment variable ' + key + '=' + value + '. You may need to set it manually.')
+      errlog(
+          f'ERROR! Failed to set environment variable {key}={value}. You may need to set it manually.'
+      )
     else:
       return True
   except Exception as e:
-    errlog('ERROR! Failed to set environment variable ' + key + '=' + value + ':')
+    errlog(f'ERROR! Failed to set environment variable {key}={value}:')
     errlog(str(e))
     errlog('You may need to set it manually.')
 
@@ -437,7 +452,7 @@ def win_set_environment_variables(env_vars_to_add, system, user):
         changed = True
         print('Setting global environment variables:')
 
-      print(key + ' = ' + value)
+      print(f'{key} = {value}')
 
   if not changed:
     print('Global environment variables up to date')
@@ -456,11 +471,12 @@ def win_set_environment_variables(env_vars_to_add, system, user):
       SMTO_BLOCK,        # fuFlags: Wait for message to be sent or timeout
       100)               # uTimeout: 100ms
   except Exception as e:
-    errlog('SendMessageTimeout failed with error: ' + str(e))
+    errlog(f'SendMessageTimeout failed with error: {str(e)}')
 
 
 def win_delete_environment_variable(key, system=True, user=True):
-  debug_print('win_delete_environment_variable(key=' + key + ', system=' + str(system) + ')')
+  debug_print(
+      f'win_delete_environment_variable(key={key}, system={str(system)})')
   return win_set_environment_variable(key, None, system, user)
 
 
@@ -488,7 +504,7 @@ def file_to_lf(filename):
 
 # Removes a single file, suppressing exceptions on failure.
 def rmfile(filename):
-  debug_print('rmfile(' + filename + ')')
+  debug_print(f'rmfile({filename})')
   try:
     os.remove(filename)
   except:
@@ -504,36 +520,35 @@ def fix_lineendings(filename):
 
 # http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
 def mkdir_p(path):
-  debug_print('mkdir_p(' + path + ')')
+  debug_print(f'mkdir_p({path})')
   if os.path.exists(path):
     return
   try:
     os.makedirs(path)
   except OSError as exc:  # Python >2.5
-    if exc.errno == errno.EEXIST and os.path.isdir(path):
-      pass
-    else:
+    if exc.errno != errno.EEXIST or not os.path.isdir(path):
       raise
 
 
 def num_files_in_directory(path):
-  if not os.path.isdir(path):
-    return 0
-  return len([name for name in os.listdir(path) if os.path.exists(os.path.join(path, name))])
+  return (len([
+      name for name in os.listdir(path)
+      if os.path.exists(os.path.join(path, name))
+  ]) if os.path.isdir(path) else 0)
 
 
 def run(cmd, cwd=None, quiet=False):
-  debug_print('run(cmd=' + str(cmd) + ', cwd=' + str(cwd) + ')')
+  debug_print(f'run(cmd={str(cmd)}, cwd={str(cwd)})')
   process = subprocess.Popen(cmd, cwd=cwd, env=os.environ.copy())
   process.communicate()
   if process.returncode != 0 and not quiet:
-    errlog(str(cmd) + ' failed with error code ' + str(process.returncode) + '!')
+    errlog(f'{str(cmd)} failed with error code {str(process.returncode)}!')
   return process.returncode
 
 
 # http://pythonicprose.blogspot.fi/2009/10/python-extract-targz-archive.html
 def untargz(source_filename, dest_dir, unpack_even_if_exists=False):
-  debug_print('untargz(source_filename=' + source_filename + ', dest_dir=' + dest_dir + ')')
+  debug_print(f'untargz(source_filename={source_filename}, dest_dir={dest_dir})')
   if not unpack_even_if_exists and num_files_in_directory(dest_dir) > 0:
     print("File '" + source_filename + "' has already been unpacked, skipping.")
     return True
@@ -558,12 +573,7 @@ def fix_potentially_long_windows_pathname(pathname):
   if pathname.startswith('\\\\?\\'):
     return pathname
   pathname = os.path.normpath(pathname.replace('/', '\\'))
-  if MINGW:
-    # MinGW versions of Python return normalized paths with backslashes
-    # converted to forward slashes, so we must use forward slashes in our
-    # prefix
-    return '//?/' + pathname
-  return '\\\\?\\' + pathname
+  return f'//?/{pathname}' if MINGW else '\\\\?\\' + pathname
 
 
 # On windows, rename/move will fail if the destination exists, and there is no
@@ -577,7 +587,7 @@ def move_with_overwrite(src, dest):
 
 # http://stackoverflow.com/questions/12886768/simple-way-to-unzip-file-in-python-on-all-oses
 def unzip(source_filename, dest_dir, unpack_even_if_exists=False):
-  debug_print('unzip(source_filename=' + source_filename + ', dest_dir=' + dest_dir + ')')
+  debug_print(f'unzip(source_filename={source_filename}, dest_dir={dest_dir})')
   if not unpack_even_if_exists and num_files_in_directory(dest_dir) > 0:
     print("File '" + source_filename + "' has already been unpacked, skipping.")
     return True
@@ -591,16 +601,11 @@ def unzip(source_filename, dest_dir, unpack_even_if_exists=False):
       # output tree at the end of uncompression step.
       for member in zf.infolist():
         words = member.filename.split('/')
-        if len(words) > 1:  # If there is a directory component?
-          if common_subdir is None:
-            common_subdir = words[0]
-          elif common_subdir != words[0]:
-            common_subdir = None
-            break
-        else:
+        if len(words) > 1 and common_subdir is None:
+          common_subdir = words[0]
+        elif len(words) > 1 and common_subdir != words[0] or len(words) <= 1:
           common_subdir = None
           break
-
       unzip_to_dir = dest_dir
       if common_subdir:
         unzip_to_dir = os.path.join(os.path.dirname(dest_dir), 'unzip_temp')
@@ -610,9 +615,7 @@ def unzip(source_filename, dest_dir, unpack_even_if_exists=False):
         zf.extract(member, fix_potentially_long_windows_pathname(unzip_to_dir))
         dst_filename = os.path.join(unzip_to_dir, member.filename)
 
-        # See: https://stackoverflow.com/questions/42326428/zipfile-in-python-file-permission
-        unix_attributes = member.external_attr >> 16
-        if unix_attributes:
+        if unix_attributes := member.external_attr >> 16:
           os.chmod(dst_filename, unix_attributes)
 
         # Move the extracted file to its final location without the base
@@ -620,7 +623,7 @@ def unzip(source_filename, dest_dir, unpack_even_if_exists=False):
         if common_subdir:
           if not member.filename.startswith(common_subdir):
             raise Exception('Unexpected filename "' + member.filename + '"!')
-          stripped_filename = '.' + member.filename[len(common_subdir):]
+          stripped_filename = f'.{member.filename[len(common_subdir):]}'
           final_dst_filename = os.path.join(dest_dir, stripped_filename)
           # Check if a directory
           if stripped_filename.endswith('/'):
@@ -661,10 +664,7 @@ def path_points_to_directory(path):
   suffix = path[last_dot:]
   # Very simple logic for the only file suffixes used by emsdk downloader. Other
   # suffixes, like 'clang-3.2' are treated as dirs.
-  if suffix in ('.exe', '.zip', '.txt'):
-    return False
-  else:
-    return True
+  return suffix not in ('.exe', '.zip', '.txt')
 
 
 def get_content_length(download):
@@ -699,7 +699,7 @@ def get_download_target(url, dstpath, filename_prefix=''):
 # On success, returns the filename on the disk pointing to the destination file that was produced
 # On failure, returns None.
 def download_file(url, dstpath, download_even_if_exists=False, filename_prefix=''):
-  debug_print('download_file(url=' + url + ', dstpath=' + dstpath + ')')
+  debug_print(f'download_file(url={url}, dstpath={dstpath})')
   file_name = get_download_target(url, dstpath, filename_prefix)
 
   if os.path.exists(file_name) and not download_even_if_exists:
@@ -711,9 +711,9 @@ def download_file(url, dstpath, download_even_if_exists=False, filename_prefix='
     with open(file_name, 'wb') as f:
       file_size = get_content_length(u)
       if file_size > 0:
-        print("Downloading: %s from %s, %s Bytes" % (file_name, url, file_size))
+        print(f"Downloading: {file_name} from {url}, {file_size} Bytes")
       else:
-        print("Downloading: %s from %s" % (file_name, url))
+        print(f"Downloading: {file_name} from {url}")
 
       file_size_dl = 0
       # Draw a progress bar 80 chars wide (in non-TTY mode)
@@ -755,7 +755,7 @@ def download_file(url, dstpath, download_even_if_exists=False, filename_prefix='
 
 
 def run_get_output(cmd, cwd=None):
-  debug_print('run_get_output(cmd=' + str(cmd) + ', cwd=' + str(cwd) + ')')
+  debug_print(f'run_get_output(cmd={str(cmd)}, cwd={str(cwd)})')
   process = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE, env=os.environ.copy(), universal_newlines=True)
   stdout, stderr = process.communicate()
   return (process.returncode, stdout, stderr)
@@ -793,10 +793,7 @@ def GIT(must_succeed=True):
 
 def git_repo_version(repo_path):
   returncode, stdout, stderr = run_get_output([GIT(), 'log', '-n', '1', '--pretty="%aD %H"'], cwd=repo_path)
-  if returncode == 0:
-    return stdout.strip()
-  else:
-    return ""
+  return stdout.strip() if returncode == 0 else ""
 
 
 def git_recent_commits(repo_path, n=20):
@@ -808,7 +805,7 @@ def git_recent_commits(repo_path, n=20):
 
 
 def git_clone(url, dstpath):
-  debug_print('git_clone(url=' + url + ', dstpath=' + dstpath + ')')
+  debug_print(f'git_clone(url={url}, dstpath={dstpath})')
   if os.path.isdir(os.path.join(dstpath, '.git')):
     debug_print("Repository '" + url + "' already cloned to directory '" + dstpath + "', skipping.")
     return True
@@ -816,12 +813,14 @@ def git_clone(url, dstpath):
   git_clone_args = []
   if GIT_CLONE_SHALLOW:
     git_clone_args += ['--depth', '1']
-  print('Cloning from ' + url + '...')
+  print(f'Cloning from {url}...')
   return run([GIT(), 'clone'] + git_clone_args + [url, dstpath]) == 0
 
 
 def git_checkout_and_pull(repo_path, branch_or_tag):
-  debug_print('git_checkout_and_pull(repo_path=' + repo_path + ', branch/tag=' + branch_or_tag + ')')
+  debug_print(
+      f'git_checkout_and_pull(repo_path={repo_path}, branch/tag={branch_or_tag})'
+  )
   ret = run([GIT(), 'fetch', '--quiet', 'origin'], repo_path)
   if ret != 0:
     return False
@@ -840,19 +839,21 @@ def git_checkout_and_pull(repo_path, branch_or_tag):
     if not target_is_tag:
       # update branch to latest (not needed for tags)
       # this line assumes that the user has not gone and made local changes to the repo
-      ret = run([GIT(), 'merge', '--ff-only', 'origin/' + branch_or_tag], repo_path)
+      ret = run([GIT(), 'merge', '--ff-only', f'origin/{branch_or_tag}'], repo_path)
     if ret != 0:
       return False
   except:
     errlog('git operation failed!')
     return False
   print("Successfully updated and checked out branch/tag '" + branch_or_tag + "' on repository '" + repo_path + "'")
-  print("Current repository version: " + git_repo_version(repo_path))
+  print(f"Current repository version: {git_repo_version(repo_path)}")
   return True
 
 
 def git_clone_checkout_and_pull(url, dstpath, branch):
-  debug_print('git_clone_checkout_and_pull(url=' + url + ', dstpath=' + dstpath + ', branch=' + branch + ')')
+  debug_print(
+      f'git_clone_checkout_and_pull(url={url}, dstpath={dstpath}, branch={branch})'
+  )
   success = git_clone(url, dstpath)
   if not success:
     return False
@@ -863,29 +864,24 @@ def git_clone_checkout_and_pull(url, dstpath, branch):
 # Each tool can have its own build type, or it can be overridden on the command
 # line.
 def decide_cmake_build_type(tool):
-  if CMAKE_BUILD_TYPE_OVERRIDE:
-    return CMAKE_BUILD_TYPE_OVERRIDE
-  else:
-    return tool.cmake_build_type
+  return CMAKE_BUILD_TYPE_OVERRIDE or tool.cmake_build_type
 
 
 # The root directory of the build.
 def llvm_build_dir(tool):
   generator_suffix = ''
-  if CMAKE_GENERATOR == 'Visual Studio 15':
+  if CMAKE_GENERATOR == 'MinGW Makefiles':
+    generator_suffix = '_mingw'
+
+  elif CMAKE_GENERATOR == 'Visual Studio 15':
     generator_suffix = '_vs2017'
   elif CMAKE_GENERATOR == 'Visual Studio 16':
     generator_suffix = '_vs2019'
-  elif CMAKE_GENERATOR == 'MinGW Makefiles':
-    generator_suffix = '_mingw'
-
   bitness_suffix = '_32' if tool.bitness == 32 else '_64'
 
-  if hasattr(tool, 'git_branch'):
-    build_dir = 'build_' + tool.git_branch.replace(os.sep, '-') + generator_suffix + bitness_suffix
-  else:
-    build_dir = 'build_' + tool.version + generator_suffix + bitness_suffix
-  return build_dir
+  return ('build_' + tool.git_branch.replace(os.sep, '-') + generator_suffix +
+          bitness_suffix if hasattr(tool, 'git_branch') else
+          f'build_{tool.version}{generator_suffix}{bitness_suffix}')
 
 
 def exe_suffix(filename):
@@ -898,25 +894,24 @@ def exe_suffix(filename):
 # root directory of the tool)
 def fastcomp_build_bin_dir(tool):
   build_dir = llvm_build_dir(tool)
-  if WINDOWS and 'Visual Studio' in CMAKE_GENERATOR:
-    old_llvm_bin_dir = os.path.join(build_dir, 'bin', decide_cmake_build_type(tool))
-
-    new_llvm_bin_dir = None
-    default_cmake_build_type = decide_cmake_build_type(tool)
-    cmake_build_types = [default_cmake_build_type, 'Release', 'RelWithDebInfo', 'MinSizeRel', 'Debug']
-    for build_type in cmake_build_types:
-      d = os.path.join(build_dir, build_type, 'bin')
-      if os.path.isfile(os.path.join(tool.installation_path(), d, exe_suffix('clang'))):
-        new_llvm_bin_dir = d
-        break
-
-    if new_llvm_bin_dir and os.path.exists(os.path.join(tool.installation_path(), new_llvm_bin_dir)):
-      return new_llvm_bin_dir
-    elif os.path.exists(os.path.join(tool.installation_path(), old_llvm_bin_dir)):
-      return old_llvm_bin_dir
-    return os.path.join(build_dir, default_cmake_build_type, 'bin')
-  else:
+  if not WINDOWS or 'Visual Studio' not in CMAKE_GENERATOR:
     return os.path.join(build_dir, 'bin')
+  old_llvm_bin_dir = os.path.join(build_dir, 'bin', decide_cmake_build_type(tool))
+
+  new_llvm_bin_dir = None
+  default_cmake_build_type = decide_cmake_build_type(tool)
+  cmake_build_types = [default_cmake_build_type, 'Release', 'RelWithDebInfo', 'MinSizeRel', 'Debug']
+  for build_type in cmake_build_types:
+    d = os.path.join(build_dir, build_type, 'bin')
+    if os.path.isfile(os.path.join(tool.installation_path(), d, exe_suffix('clang'))):
+      new_llvm_bin_dir = d
+      break
+
+  if new_llvm_bin_dir and os.path.exists(os.path.join(tool.installation_path(), new_llvm_bin_dir)):
+    return new_llvm_bin_dir
+  elif os.path.exists(os.path.join(tool.installation_path(), old_llvm_bin_dir)):
+    return old_llvm_bin_dir
+  return os.path.join(build_dir, default_cmake_build_type, 'bin')
 
 
 def build_env(generator):
@@ -927,11 +922,7 @@ def build_env(generator):
   if MACOS:
     build_env['CXXFLAGS'] = ((build_env['CXXFLAGS'] + ' ') if hasattr(build_env, 'CXXFLAGS') else '') + '-stdlib=libc++'
   elif 'Visual Studio 15' in generator or 'Visual Studio 16' in generator:
-    if 'Visual Studio 16' in generator:
-      path = vswhere(16)
-    else:
-      path = vswhere(15)
-
+    path = vswhere(16) if 'Visual Studio 16' in generator else vswhere(15)
     # Configuring CMake for Visual Studio needs and env. var VCTargetsPath to be present.
     # How this is supposed to work is unfortunately very undocumented. See
     # https://discourse.cmake.org/t/cmake-failed-to-get-the-value-of-vctargetspath-with-vs2019-16-7/1839/16
@@ -944,16 +935,16 @@ def build_env(generator):
       ]
       for p in vctargets_paths:
         if os.path.isfile(os.path.join(p, 'Microsoft.Cpp.Default.props')):
-          debug_print('Set env. var VCTargetsPath=' + p + ' for CMake.')
+          debug_print(f'Set env. var VCTargetsPath={p} for CMake.')
           build_env['VCTargetsPath'] = p
           break
         else:
-          debug_print('Searched path ' + p + ' as candidate for VCTargetsPath, not working.')
+          debug_print(f'Searched path {p} as candidate for VCTargetsPath, not working.')
 
-      if 'VCTargetsPath' not in build_env:
-        errlog('Unable to locate Visual Studio compiler installation for generator "' + generator + '"!')
-        errlog('Either rerun installation in Visual Studio Command Prompt, or locate directory to Microsoft.Cpp.Default.props manually')
-        sys.exit(1)
+    if 'VCTargetsPath' not in build_env:
+      errlog('Unable to locate Visual Studio compiler installation for generator "' + generator + '"!')
+      errlog('Either rerun installation in Visual Studio Command Prompt, or locate directory to Microsoft.Cpp.Default.props manually')
+      sys.exit(1)
 
     # CMake and VS2017 cl.exe needs to have mspdb140.dll et al. in its PATH.
     vc_bin_paths = [vs_filewhere(path, 'amd64', 'cl.exe'),
@@ -971,14 +962,14 @@ def get_generator_for_sln_file(sln_file):
     return 'Visual Studio 16'
   if '# Visual Studio 15' in contents:  # VS2017
     return 'Visual Studio 15'
-  raise Exception('Unknown generator used to build solution file ' + sln_file)
+  raise Exception(f'Unknown generator used to build solution file {sln_file}')
 
 
 def find_msbuild(sln_file):
   # The following logic attempts to find a Visual Studio version specific
   # MSBuild.exe from a list of known locations.
   generator = get_generator_for_sln_file(sln_file)
-  debug_print('find_msbuild looking for generator ' + str(generator))
+  debug_print(f'find_msbuild looking for generator {str(generator)}')
   if generator == 'Visual Studio 16':  # VS2019
     path = vswhere(16)
     search_paths = [os.path.join(path, 'MSBuild/Current/Bin'),
@@ -993,7 +984,7 @@ def find_msbuild(sln_file):
 
   for path in search_paths:
     p = os.path.join(path, 'MSBuild.exe')
-    debug_print('Searching for MSBuild.exe: ' + p)
+    debug_print(f'Searching for MSBuild.exe: {p}')
     if os.path.isfile(p):
       return p
   debug_print('MSBuild.exe in PATH? ' + str(which('MSBuild.exe')))
@@ -1002,9 +993,11 @@ def find_msbuild(sln_file):
 
 
 def make_build(build_root, build_type, build_target_platform='x64'):
-  debug_print('make_build(build_root=' + build_root + ', build_type=' + build_type + ', build_target_platform=' + build_target_platform + ')')
+  debug_print(
+      f'make_build(build_root={build_root}, build_type={build_type}, build_target_platform={build_target_platform})'
+  )
   if CPU_CORES > 1:
-    print('Performing a parallel build with ' + str(CPU_CORES) + ' cores.')
+    print(f'Performing a parallel build with {str(CPU_CORES)} cores.')
   else:
     print('Performing a singlethreaded build.')
 
@@ -1022,23 +1015,31 @@ def make_build(build_root, build_type, build_target_platform='x64'):
       # logical cores, it would spawn 16*16=256 cl.exe processes, which would
       # start crashing when running out of system memory)
       #      make = [find_msbuild(os.path.join(build_root, solution_name)), '/maxcpucount:' + str(CPU_CORES), '/t:Build', '/p:Configuration=' + build_type, '/nologo', '/verbosity:minimal', solution_name]
-      make = [find_msbuild(os.path.join(build_root, solution_name)), '/t:Build', '/p:Configuration=' + build_type, '/p:Platform=' + build_target_platform, '/nologo', '/verbosity:minimal', solution_name]
+      make = [
+          find_msbuild(os.path.join(build_root, solution_name)),
+          '/t:Build',
+          f'/p:Configuration={build_type}',
+          f'/p:Platform={build_target_platform}',
+          '/nologo',
+          '/verbosity:minimal',
+          solution_name,
+      ]
     else:
-      make = ['mingw32-make', '-j' + str(CPU_CORES)]
+      make = ['mingw32-make', f'-j{str(CPU_CORES)}']
   else:
-    make = ['cmake', '--build', '.', '--', '-j' + str(CPU_CORES)]
+    make = ['cmake', '--build', '.', '--', f'-j{str(CPU_CORES)}']
 
   # Build
   try:
-    print('Running build: ' + str(make))
+    print(f'Running build: {make}')
     ret = subprocess.check_call(make, cwd=build_root, env=build_env(generator_to_use))
     if ret != 0:
-      errlog('Build failed with exit code ' + ret + '!')
-      errlog('Working directory: ' + build_root)
+      errlog(f'Build failed with exit code {ret}!')
+      errlog(f'Working directory: {build_root}')
       return False
   except Exception as e:
     errlog('Build failed due to exception!')
-    errlog('Working directory: ' + build_root)
+    errlog(f'Working directory: {build_root}')
     errlog(str(e))
     return False
 
@@ -1046,42 +1047,40 @@ def make_build(build_root, build_type, build_target_platform='x64'):
 
 
 def cmake_configure(generator, build_root, src_root, build_type, extra_cmake_args=[]):
-  debug_print('cmake_configure(generator=' + str(generator) + ', build_root=' + str(build_root) + ', src_root=' + str(src_root) + ', build_type=' + str(build_type) + ', extra_cmake_args=' + str(extra_cmake_args) + ')')
+  debug_print(
+      f'cmake_configure(generator={str(generator)}, build_root={str(build_root)}, src_root={str(src_root)}, build_type={str(build_type)}, extra_cmake_args={str(extra_cmake_args)})'
+  )
   # Configure
   if not os.path.isdir(build_root):
     # Create build output directory if it doesn't yet exist.
     os.mkdir(build_root)
   try:
-    if generator:
-      generator = ['-G', generator]
-    else:
-      generator = []
-
-    cmdline = ['cmake'] + generator + ['-DCMAKE_BUILD_TYPE=' + build_type, '-DPYTHON_EXECUTABLE=' + sys.executable]
+    generator = ['-G', generator] if generator else []
+    cmdline = (['cmake'] + generator + [
+        f'-DCMAKE_BUILD_TYPE={build_type}',
+        f'-DPYTHON_EXECUTABLE={sys.executable}',
+    ])
     # Target macOS 10.11 at minimum, to support widest range of Mac devices from "Mid 2007" and newer:
     # https://en.wikipedia.org/wiki/MacBook_Pro#Supported_macOS_releases
     cmdline += ['-DCMAKE_OSX_DEPLOYMENT_TARGET=10.11']
     cmdline += extra_cmake_args + [src_root]
 
-    print('Running CMake: ' + str(cmdline))
+    print(f'Running CMake: {cmdline}')
 
     # Specify the deployment target also as an env. var, since some Xcode versions
     # read this instead of the CMake field.
     os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.11'
 
     def quote_parens(x):
-      if ' ' in x:
-        return '"' + x.replace('"', '\\"') + '"'
-      else:
-        return x
+      return '"' + x.replace('"', '\\"') + '"' if ' ' in x else x
 
     # Create a file 'recmake.bat/sh' in the build root that user can call to
     # manually recmake the build tree with the previous build params
     open(os.path.join(build_root, 'recmake.' + ('bat' if WINDOWS else 'sh')), 'w').write(' '.join(map(quote_parens, cmdline)))
     ret = subprocess.check_call(cmdline, cwd=build_root, env=build_env(CMAKE_GENERATOR))
     if ret != 0:
-      errlog('CMake invocation failed with exit code ' + ret + '!')
-      errlog('Working directory: ' + build_root)
+      errlog(f'CMake invocation failed with exit code {ret}!')
+      errlog(f'Working directory: {build_root}')
       return False
   except OSError as e:
     if e.errno == errno.ENOENT:
@@ -1097,7 +1096,7 @@ def cmake_configure(generator, build_root, src_root, build_type, extra_cmake_arg
     raise
   except Exception as e:
     errlog('CMake invocation failed due to exception!')
-    errlog('Working directory: ' + build_root)
+    errlog(f'Working directory: {build_root}')
     errlog(str(e))
     return False
 
@@ -1115,7 +1114,7 @@ def xcode_sdk_version():
 
 
 def build_fastcomp(tool):
-  debug_print('build_fastcomp(' + str(tool) + ')')
+  debug_print(f'build_fastcomp({str(tool)})')
   fastcomp_root = tool.installation_path()
   fastcomp_src_root = os.path.join(fastcomp_root, 'src')
   # Does this tool want to be git cloned from github?
@@ -1164,7 +1163,7 @@ def build_fastcomp(tool):
   enable_assertions = ENABLE_LLVM_ASSERTIONS.lower() == 'on' or (ENABLE_LLVM_ASSERTIONS == 'auto' and build_type.lower() != 'release' and build_type.lower() != 'minsizerel')
 
   only_supports_wasm = hasattr(tool, 'only_supports_wasm')
-  if ARCH == 'x86' or ARCH == 'x86_64':
+  if ARCH in ['x86', 'x86_64']:
     targets_to_build = 'X86'
   elif ARCH == 'arm':
     targets_to_build = 'ARM'
@@ -1177,10 +1176,19 @@ def build_fastcomp(tool):
     if targets_to_build != '':
       targets_to_build += ';'
     targets_to_build += 'JSBackend'
-  args += ['-DLLVM_TARGETS_TO_BUILD=' + targets_to_build, '-DLLVM_INCLUDE_EXAMPLES=OFF', '-DCLANG_INCLUDE_EXAMPLES=OFF', '-DLLVM_INCLUDE_TESTS=' + tests_arg, '-DCLANG_INCLUDE_TESTS=' + tests_arg, '-DLLVM_ENABLE_ASSERTIONS=' + ('ON' if enable_assertions else 'OFF')]
+  args += [
+      f'-DLLVM_TARGETS_TO_BUILD={targets_to_build}',
+      '-DLLVM_INCLUDE_EXAMPLES=OFF',
+      '-DCLANG_INCLUDE_EXAMPLES=OFF',
+      f'-DLLVM_INCLUDE_TESTS={tests_arg}',
+      f'-DCLANG_INCLUDE_TESTS={tests_arg}',
+      '-DLLVM_ENABLE_ASSERTIONS=' + ('ON' if enable_assertions else 'OFF'),
+  ]
   if os.environ.get('LLVM_CMAKE_ARGS'):
     extra_args = os.environ['LLVM_CMAKE_ARGS'].split(',')
-    print('Passing the following extra arguments to LLVM CMake configuration: ' + str(extra_args))
+    print(
+        f'Passing the following extra arguments to LLVM CMake configuration: {str(extra_args)}'
+    )
     args += extra_args
 
   # MacOS < 10.13 workaround for LLVM build bug https://github.com/kripken/emscripten/issues/5418:
@@ -1201,7 +1209,7 @@ def build_fastcomp(tool):
 # LLVM git source tree migrated to a single repository instead of multiple
 # ones, build_llvm() builds via that repository structure
 def build_llvm(tool):
-  debug_print('build_llvm(' + str(tool) + ')')
+  debug_print(f'build_llvm({str(tool)})')
   llvm_root = tool.installation_path()
   llvm_src_root = os.path.join(llvm_root, 'src')
   success = git_clone_checkout_and_pull(tool.download_url(), llvm_src_root, tool.git_branch)
@@ -1218,7 +1226,7 @@ def build_llvm(tool):
 
   enable_assertions = ENABLE_LLVM_ASSERTIONS.lower() == 'on' or (ENABLE_LLVM_ASSERTIONS == 'auto' and build_type.lower() != 'release' and build_type.lower() != 'minsizerel')
 
-  if ARCH == 'x86' or ARCH == 'x86_64':
+  if ARCH in ['x86', 'x86_64']:
     targets_to_build = 'WebAssembly;X86'
   elif ARCH == 'arm':
     targets_to_build = 'WebAssembly;ARM'
@@ -1226,15 +1234,18 @@ def build_llvm(tool):
     targets_to_build = 'WebAssembly;AArch64'
   else:
     targets_to_build = 'WebAssembly'
-  args = ['-DLLVM_TARGETS_TO_BUILD=' + targets_to_build,
-          '-DLLVM_INCLUDE_EXAMPLES=OFF',
-          '-DLLVM_INCLUDE_TESTS=' + tests_arg,
-          '-DCLANG_INCLUDE_TESTS=' + tests_arg,
-          '-DLLVM_ENABLE_ASSERTIONS=' + ('ON' if enable_assertions else 'OFF'),
-          # Disable optional LLVM dependencies, these can cause unwanted .so dependencies
-          # that prevent distributing the generated compiler for end users.
-          '-DLLVM_ENABLE_LIBXML2=OFF', '-DLLVM_ENABLE_TERMINFO=OFF', '-DLLDB_ENABLE_LIBEDIT=OFF',
-          '-DLLVM_ENABLE_LIBEDIT=OFF', '-DLLVM_ENABLE_LIBPFM=OFF']
+  args = [
+      f'-DLLVM_TARGETS_TO_BUILD={targets_to_build}',
+      '-DLLVM_INCLUDE_EXAMPLES=OFF',
+      f'-DLLVM_INCLUDE_TESTS={tests_arg}',
+      f'-DCLANG_INCLUDE_TESTS={tests_arg}',
+      '-DLLVM_ENABLE_ASSERTIONS=' + ('ON' if enable_assertions else 'OFF'),
+      '-DLLVM_ENABLE_LIBXML2=OFF',
+      '-DLLVM_ENABLE_TERMINFO=OFF',
+      '-DLLDB_ENABLE_LIBEDIT=OFF',
+      '-DLLVM_ENABLE_LIBEDIT=OFF',
+      '-DLLVM_ENABLE_LIBPFM=OFF',
+  ]
   # LLVM build system bug: compiler-rt does not build on Windows. It insists on performing a CMake install step that writes to C:\Program Files. Attempting
   # to reroute that to build_root directory then fails on an error
   #  file INSTALL cannot find
@@ -1255,7 +1266,9 @@ def build_llvm(tool):
 
   if os.environ.get('LLVM_CMAKE_ARGS'):
     extra_args = os.environ['LLVM_CMAKE_ARGS'].split(',')
-    print('Passing the following extra arguments to LLVM CMake configuration: ' + str(extra_args))
+    print(
+        f'Passing the following extra arguments to LLVM CMake configuration: {str(extra_args)}'
+    )
     args += extra_args
 
   cmakelists_dir = os.path.join(llvm_src_root, 'llvm')

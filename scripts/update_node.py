@@ -11,6 +11,7 @@ For the windows version we also alter the directory layout to add the 'bin'
 direcotry.
 """
 
+
 import urllib.request
 import subprocess
 import os
@@ -29,9 +30,9 @@ suffixes = [
 ]
 
 for suffix in suffixes:
-    filename = 'node-v%s%s' % (version, suffix)
+    filename = f'node-v{version}{suffix}'
     download_url = base + filename
-    print('Downloading: ' + download_url)
+    print(f'Downloading: {download_url}')
     urllib.request.urlretrieve(download_url, filename)
 
     if '-win-' in suffix:
@@ -45,7 +46,7 @@ for suffix in suffixes:
       shutil.rmtree(dirname)
 
     upload_url = upload_base + filename
-    print('Uploading: ' + upload_url)
+    print(f'Uploading: {upload_url}')
     cmd = ['gsutil', 'cp', '-n', filename, upload_url]
     print(' '.join(cmd))
     subprocess.check_call(cmd)

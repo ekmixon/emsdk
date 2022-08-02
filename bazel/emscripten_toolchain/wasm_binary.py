@@ -32,7 +32,7 @@ def ensure(f):
 
 def check(f):
   if not os.path.exists(f):
-    raise Exception('Expected file in archive: %s' % f)
+    raise Exception(f'Expected file in archive: {f}')
 
 
 def main():
@@ -53,31 +53,29 @@ def main():
     subprocess.check_call(
         ['tar', 'xf', args.archive, '-C', args.output_path])
   elif 'binary' in mimetype:
-    subprocess.check_call([
-        'cp',
-        args.archive,
-        os.path.join(args.output_path, stem + '.wasm')])
+    subprocess.check_call(
+        ['cp', args.archive,
+         os.path.join(args.output_path, f'{stem}.wasm')])
   elif 'text' in mimetype:
-    subprocess.check_call([
-        'cp',
-        args.archive,
-        os.path.join(args.output_path, stem + '.js')])
+    subprocess.check_call(
+        ['cp', args.archive,
+         os.path.join(args.output_path, f'{stem}.js')])
   else:
     subprocess.check_call(['cp', args.archive, args.output_path])
 
   # At least one of these two files should exist at this point.
-  ensure(os.path.join(args.output_path, stem + '.js'))
-  ensure(os.path.join(args.output_path, stem + '.wasm'))
+  ensure(os.path.join(args.output_path, f'{stem}.js'))
+  ensure(os.path.join(args.output_path, f'{stem}.wasm'))
 
   # And can optionally contain these extra files.
-  ensure(os.path.join(args.output_path, stem + '.wasm.map'))
-  ensure(os.path.join(args.output_path, stem + '.worker.js'))
-  ensure(os.path.join(args.output_path, stem + '.js.mem'))
-  ensure(os.path.join(args.output_path, stem + '.data'))
-  ensure(os.path.join(args.output_path, stem + '.fetch.js'))
-  ensure(os.path.join(args.output_path, stem + '.js.symbols'))
-  ensure(os.path.join(args.output_path, stem + '.wasm.debug.wasm'))
-  ensure(os.path.join(args.output_path, stem + '.html'))
+  ensure(os.path.join(args.output_path, f'{stem}.wasm.map'))
+  ensure(os.path.join(args.output_path, f'{stem}.worker.js'))
+  ensure(os.path.join(args.output_path, f'{stem}.js.mem'))
+  ensure(os.path.join(args.output_path, f'{stem}.data'))
+  ensure(os.path.join(args.output_path, f'{stem}.fetch.js'))
+  ensure(os.path.join(args.output_path, f'{stem}.js.symbols'))
+  ensure(os.path.join(args.output_path, f'{stem}.wasm.debug.wasm'))
+  ensure(os.path.join(args.output_path, f'{stem}.html'))
 
 
 if __name__ == '__main__':

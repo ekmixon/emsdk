@@ -26,19 +26,16 @@ def main(args):
   release_info = emsdk.load_releases_info()
   new_version = version_to_list(release_info['aliases']['latest'])
   new_version[-1] += 1
-  branch_name = 'version_%s' % '_'.join(str(part) for part in new_version)
+  branch_name = f"version_{'_'.join((str(part) for part in new_version))}"
 
   # Create a new git branch
   subprocess.check_call(['git', 'checkout', '-b', branch_name], cwd=root_dir)
 
   new_version = '.'.join(str(part) for part in new_version)
-  if args:
-    new_hash = args[0]
-  else:
-    new_hash = emsdk.get_emscripten_releases_tot()
-  print('Creating new release: %s -> %s' % (new_version, new_hash))
+  new_hash = args[0] if args else emsdk.get_emscripten_releases_tot()
+  print(f'Creating new release: {new_version} -> {new_hash}')
   release_info['releases'][new_version] = new_hash
-  releases = [(k, v) for k, v in release_info['releases'].items()]
+  releases = list(release_info['releases'].items())
   releases.sort(key=lambda pair: version_to_list(pair[0]))
 
   release_info['releases'] = OrderedDict(reversed(releases))
@@ -54,7 +51,7 @@ def main(args):
   subprocess.check_call(['git', 'add', '-u', '.'], cwd=root_dir)
   subprocess.check_call(['git', 'commit', '-m', new_version], cwd=root_dir)
 
-  print('New relase created in branch: `%s`' % branch_name)
+  print(f'New relase created in branch: `{branch_name}`')
 
   return 0
 
